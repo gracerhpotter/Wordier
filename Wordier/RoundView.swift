@@ -9,21 +9,55 @@ import SwiftUI
 
 struct RoundView: View {
     @State private var textBoxContent: String = ""    // Holds the text to be displayed in the text box
-    @State private var submittedWord: String? = nil   // Holds the final submitted word
-    @State private var shuffledLetters: [String] = ["S", "A", "M", "P", "L", "E"].shuffled() // Randomized letters
-    @State private var submittedWords: [String] = []  // Holds the list of all submitted words
-    @State private var errorMessage: String? = nil    // Error message for invalid word submission
-    @State private var usedLetters: Set<String> = []  // Track used letters for the current word
-    
-    @State private var validWords: Set<String> = []   // Holds the set of valid words loaded from the word list
-    @State private var possibleWordPlaceholders: [String] = []   // Holds placeholders or words as they are found
+    @State private var submittedWord: String? = nil   // Holds the last submitted word
+    @State private var shuffledLetters: [String] = []  // Randomized letters
+    @State private var submittedWords: [String] = []   // Holds the list of all submitted words
+    @State private var errorMessage: String? = nil     // Error message for invalid word submission
+    @State private var letterButtonStates: [Bool] = [] // Track the state of each letter button (true = active, false = used)
+    @State private var validWords: Set<String> = []    // Holds the set of valid words loaded from the word list
+    @State private var possibleWordPlaceholders: [String] = [] // Holds placeholders or words as they are found
+    @State private var possibleWords: [String] = [] // Holds words as they are found
+
+
 
     var body: some View {
         VStack {
+            
+            // Horizontal alignment for letter squares
+            HStack {
+                ForEach(shuffledLetters.indices, id: \.self) { index in
+                    let letter = shuffledLetters[index]
+                    // Each square is a button that adds the letter to the text box
+                    Button(action: {
+                        textBoxContent += letter
+                        letterButtonStates[index] = false // Mark the letter at this index as used
+                    }) {
+                        Text(letter)
+                            .font(.title2)
+                            .foregroundColor(.white)
+                            .frame(width: 30, height: 30)
+                            .background(letterButtonStates[index] ? Color.blue : Color.gray) // Gray out only the used letter at this index
+                            .cornerRadius(5)
+                            .padding(5)
+                    }
+                    .disabled(!letterButtonStates[index]) // Disable the button if it was already used
+                }
+                Button(action: {
+                                shuffleLetters()
+                            }) {
+                                Image(systemName: "arrow.2.circlepath")
+                                    .font(.title)
+                                    .foregroundColor(.black)
+                                    .padding()
+                            }
+            }
+            .padding(.bottom, 20)
+            
+            
             // Text box displaying the selected letters
             HStack {
                 TextField("Selected letters will appear here", text: $textBoxContent)
-                    .font(.title)
+                    .font(.title2)
                     .padding()
                     .frame(height: 50)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -31,85 +65,82 @@ struct RoundView: View {
                 
                 // Delete button to remove the last letter from the text box
                 Button(action: {
-                    if let lastLetter = textBoxContent.last.map(String.init) {
-                        // Remove the last letter from the text box
+                    if let lastLetter = textBoxContent.last {
                         textBoxContent.removeLast()
-                        // Re-enable the button for the removed letter
-                        usedLetters.remove(lastLetter)
+                        // Find the index of the last added letter and reset its button state
+                        if let indexToReset = shuffledLetters.firstIndex(of: String(lastLetter)) {
+                            letterButtonStates[indexToReset] = true // Reset button state for this letter
+                        }
                     }
                 }) {
-                    Text("Delete")
+                    Image(systemName: "arrow.left")
+                        .foregroundColor(.white)
+                        .padding()
+                        .background(Color.red)
+                        .cornerRadius(8)
+                }
+            }
+            .padding(.bottom, 5)
+
+            HStack {
+                // Shuffle button to randomize the letters again
+                Button(action: {
+                    selectRandomWord() // Select a new random word
+                }) {
+                    Text("New Word")
                         .font(.title2)
                         .foregroundColor(.white)
-                        .frame(width: 80, height: 50)
-                        .background(Color.red)
+                        .frame(width: 150, height: 50)
+                        .background(Color.orange)
                         .cornerRadius(10)
+                        .padding()
                 }
-            }
-            .padding(.bottom, 20)
-
-            // Horizontal alignment for letter squares
-            HStack {
-                ForEach(shuffledLetters, id: \.self) { letter in
-                    // Each square is a button that adds the letter to the text box
-                    Button(action: {
-                        textBoxContent += letter
-                        usedLetters.insert(letter) // Mark the letter as used
-                    }) {
-                        Text(letter)
-                            .font(.largeTitle)
-                            .foregroundColor(.white)
-                            .frame(width: 60, height: 60)
-                            .background(usedLetters.contains(letter) ? Color.gray : Color.blue) // Grey out used letters
-                            .cornerRadius(10)
-                            .padding(5)
-                    }
-                    .disabled(usedLetters.contains(letter)) // Disable button if the letter has been used
-                }
-            }
-            .padding(.bottom, 20)
-            
-            // Enter button
-            Button(action: {
-                if !textBoxContent.isEmpty {
-                    // Check if the word is a valid English word
-                    if isValidEnglishWord(word: textBoxContent) {
-                        // Check for duplicates
-                        if !submittedWords.contains(textBoxContent) {
-                            submittedWords.append(textBoxContent)
-                            // Sort first by word length, then alphabetically
-                            submittedWords.sort {
-                                if $0.count == $1.count {
-                                    return $0 < $1 // Sort alphabetically if lengths are the same
+                
+                // Enter button
+                Button(action: {
+                    if !textBoxContent.isEmpty {
+                        // Check if the word is a valid English word
+                        if isValidEnglishWord(word: textBoxContent) {
+                            // Check for duplicates
+                            if !submittedWords.contains(textBoxContent) {
+                                submittedWords.append(textBoxContent)
+                                // Sort first by word length, then alphabetically
+                                submittedWords.sort {
+                                    if $0.count == $1.count {
+                                        return $0 < $1 // Sort alphabetically if lengths are the same
+                                    }
+                                    return $0.count < $1.count // Sort by word length
                                 }
-                                return $0.count < $1.count // Sort by word length
+                                submittedWord = textBoxContent
+                                errorMessage = nil // Clear any previous error
+                                textBoxContent = "" // Clear the text box after submission
+                                letterButtonStates = Array(repeating: true, count: shuffledLetters.count) // Reset all buttons for the next word
+                            } else {
+                                errorMessage = "\(textBoxContent) has already been submitted."
+                                textBoxContent = "" // Clear the text box after submission
+                                letterButtonStates = Array(repeating: true, count: shuffledLetters.count) // Reset all buttons for the next word
                             }
-                            submittedWord = textBoxContent
-                            errorMessage = nil // Clear any previous error
-                            textBoxContent = "" // Clear the text box after submission
-                            usedLetters.removeAll() // Reset used letters for the next word
                         } else {
-                            errorMessage = "\(textBoxContent) has already been submitted."
+                            errorMessage = "\(textBoxContent) is not a valid English word or is too short."
+                            textBoxContent = "" // Clear the text box after submission
+                            letterButtonStates = Array(repeating: true, count: shuffledLetters.count) // Reset all buttons for the next word
                         }
-                    } else {
-                        errorMessage = "\(textBoxContent) is not a valid English word or is too short."
                     }
+                }) {
+                    Text("Enter")
+                        .font(.title2)
+                        .foregroundColor(.white)
+                        .frame(width: 100, height: 50)
+                        .background(Color.green)
+                        .cornerRadius(10)
+                        .padding()
                 }
-            }) {
-                Text("Enter")
-                    .font(.title2)
-                    .foregroundColor(.white)
-                    .frame(width: 200, height: 50)
-                    .background(Color.green)
-                    .cornerRadius(10)
-                    .padding()
             }
             
             // Display the last submitted word
             if let word = submittedWord {
-                Text("You made the word: \(word)")
-                    .font(.title2)
-                    .padding(.top, 20)
+                Text("Last word submitted: \(word)")
+                    .padding(.top, 10)
             }
             
             // Display error message if invalid word is submitted
@@ -125,32 +156,16 @@ struct RoundView: View {
                     .font(.headline)
                     .padding(.top, 20)
                 
-                ScrollView {
-                    VStack {
+                ScrollView{
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 70))]) {
                         ForEach(possibleWordPlaceholders, id: \.self) { word in
                             Text(word)
-                                .padding(5)
                         }
                     }
-                    .frame(maxHeight: 200)
                 }
-                .frame(maxHeight: 200)
+                
+                .frame(maxHeight: 650)
                 .border(Color.gray, width: 1)
-            }
-
-            // Shuffle button to randomize the letters again
-            Button(action: {
-                shuffledLetters = shuffledLetters.shuffled() // Reshuffle the letters
-                usedLetters.removeAll() // Clear used letters when shuffling
-                generatePossibleWords() // Regenerate the list of possible words
-            }) {
-                Text("Shuffle Letters")
-                    .font(.title2)
-                    .foregroundColor(.white)
-                    .frame(width: 200, height: 50)
-                    .background(Color.orange)
-                    .cornerRadius(10)
-                    .padding()
             }
 
             Spacer() // Push content to the top
@@ -158,8 +173,15 @@ struct RoundView: View {
         .padding()
         .onAppear {
             loadWordList()       // Load the word list when the view appears
-            generatePossibleWords() // Generate possible words when the view appears
+            selectRandomWord()    // Select a random word to generate letters
         }
+    }
+    
+    // Function to shuffle the letters
+    func shuffleLetters() {
+        shuffledLetters.shuffle()
+        letterButtonStates = Array(repeating: true, count: shuffledLetters.count) // Reset button states
+        textBoxContent = "" // Clear the text box
     }
     
     // Function to load the word list from a file
@@ -175,28 +197,43 @@ struct RoundView: View {
         }
     }
 
+    // Function to select a random word between 6 and 8 characters
+    func selectRandomWord() {
+        let validWordsList = validWords.filter { $0.count >= 5 && $0.count <= 7 }
+        if let randomWord = validWordsList.randomElement() {
+            shuffledLetters = randomWord.map { String($0) } // Create buttons from letters
+            shuffledLetters.shuffle() // Shuffle the letters
+            textBoxContent = "" // Clear text box for the new word
+            letterButtonStates = Array(repeating: true, count: shuffledLetters.count) // Reset button states for the new word
+            generatePossibleWords() // Regenerate possible words
+        }
+    }
+    
     // Function to generate all possible valid words with the shuffled letters
     func generatePossibleWords() {
         possibleWordPlaceholders = [] // Clear the current list
+        possibleWords = [] // Clear the current list
+        
         let letterCombinations = generateCombinations(from: shuffledLetters)
         
         // Check which combinations are valid words
         for combination in letterCombinations {
             if isValidEnglishWord(word: combination) {
-                possibleWordPlaceholders.append(combination) // Add valid word to the list
-            } else {
-                // Add placeholders if it's not a valid word
-                possibleWordPlaceholders.append(String(repeating: "_ ", count: combination.count).trimmingCharacters(in: .whitespaces))
+                possibleWords.append(combination) // Add valid word to the list
+                
             }
         }
         
         // Sort possible words by length, then alphabetically
-        possibleWordPlaceholders.sort {
+        possibleWords.sort {
             if $0.count == $1.count {
                 return $0 < $1
             }
             return $0.count < $1.count
         }
+        
+        // Add placeholder
+        possibleWordPlaceholders = possibleWords
     }
     
     // Function to generate all possible combinations of the shuffled letters
@@ -222,21 +259,25 @@ struct RoundView: View {
             var remainingLetters = letters
             remainingLetters.remove(at: index)
             let subPermutations = permutations(of: remainingLetters, length: length - 1)
-            result += subPermutations.map { letter + $0 }
+            for permutation in subPermutations {
+                result.append(letter + permutation)
+            }
         }
+        
         return result
     }
-
-    // Function to check if the word is in the valid word list
+    
+    // Function to check if the submitted word is part of the English dictionary and meets the length requirement
     func isValidEnglishWord(word: String) -> Bool {
-        return validWords.contains(word.lowercased()) && word.count >= 3
+        return validWords.contains(word) && word.count >= 3
     }
 }
+
+
+
 
 struct RoundView_Previews: PreviewProvider {
     static var previews: some View {
         RoundView()
     }
 }
-
-
